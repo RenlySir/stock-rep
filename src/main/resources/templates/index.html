@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Trend Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 16px 24px;
+        }
+        .card {
+            background: #ffffff;
+            border-radius: 10px;
+            padding: 16px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            margin-bottom: 16px;
+        }
+        .row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: end;
+        }
+        .field {
+            display: flex;
+            flex-direction: column;
+            min-width: 160px;
+            gap: 6px;
+        }
+        input {
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 8px;
+            font-size: 14px;
+        }
+        button {
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: #fff;
+            padding: 10px 14px;
+            cursor: pointer;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+        .metric {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 12px;
+        }
+        .buy {
+            color: #059669;
+            font-weight: bold;
+        }
+        .sell {
+            color: #dc2626;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: left;
+        }
+        .error {
+            color: #dc2626;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2>Stock Trend Dashboard</h2>
+        <p>View price trend, buy/sell signals, and action suggestions in browser.</p>
+        <div class="row">
+            <div class="field">
+                <label for="stockCode">Stock Code</label>
+                <input id="stockCode" th:value="${defaultStockCode}" value="300779"/>
+            </div>
+            <div class="field">
+                <label for="beginDate">Begin Date (yyyyMMdd)</label>
+                <input id="beginDate" th:value="${defaultBeginDate}" value="20220101"/>
+            </div>
+            <div class="field">
+                <label for="endDate">End Date (yyyyMMdd)</label>
+                <input id="endDate" th:value="${defaultEndDate}" value="20991231"/>
+            </div>
+            <button id="analyzeBtn">Analyze</button>
+        </div>
+        <div id="errorText" class="error"></div>
+    </div>
+
+    <div class="card">
+        <div class="metrics">
+            <div class="metric">
+                <div>Trend Prediction</div>
+                <h3 id="trendPrediction">-</h3>
+            </div>
+            <div class="metric">
+                <div>Up Probability</div>
+                <h3 id="upProbability">-</h3>
+            </div>
+            <div class="metric">
+                <div>Action Suggestion</div>
+                <h3 id="actionSuggestion">-</h3>
+            </div>
+            <div class="metric">
+                <div>Latest Advice</div>
+                <h3 id="latestAdvice">-</h3>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <canvas id="trendChart" height="100"></canvas>
+    </div>
+
+    <div class="card">
+        <h3>Recent Buy/Sell Signals</h3>
+        <table>
+            <thead>
+            <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Price</th>
+                <th>Reason</th>
+            </tr>
+            </thead>
+            <tbody id="signalsBody"></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const chartContext = document.getElementById("trendChart").getContext("2d");
+    let trendChart = null;
+
+    function toTypeStyle(type) {
+        return type === "BUY" ? "buy" : "sell";
+    }
+
+    function renderSignals(signals) {
+        const tbody = document.getElementById("signalsBody");
+        tbody.innerHTML = "";
+        if (!signals || signals.length === 0) {
+            tbody.innerHTML = "<tr><td colspan='4'>No signals found.</td></tr>";
+            return;
+        }
+        for (const item of signals) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${item.date}</td>
+                <td class="${toTypeStyle(item.type)}">${item.type}</td>
+                <td>${item.price.toFixed(2)}</td>
+                <td>${item.reason}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    function buildSignalDataset(data, signalType, color) {
+        return {
+            label: signalType,
+            data: data.signals
+                .filter(s => s.type === signalType)
+                .map(s => ({x: s.date, y: s.price})),
+            showLine: false,
+            pointRadius: 5,
+            pointHoverRadius: 6,
+            borderColor: color,
+            backgroundColor: color
+        };
+    }
+
+    function renderChart(data) {
+        if (trendChart) {
+            trendChart.destroy();
+        }
+        trendChart = new Chart(chartContext, {
+            type: "line",
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: "Close",
+                        data: data.closePrices,
+                        borderColor: "#2563eb",
+                        fill: false,
+                        tension: 0.15
+                    },
+                    {
+                        label: "MA5",
+                        data: data.ma5,
+                        borderColor: "#10b981",
+                        fill: false,
+                        tension: 0.15
+                    },
+                    {
+                        label: "MA20",
+                        data: data.ma20,
+                        borderColor: "#f59e0b",
+                        fill: false,
+                        tension: 0.15
+                    },
+                    buildSignalDataset(data, "BUY", "#16a34a"),
+                    buildSignalDataset(data, "SELL", "#dc2626")
+                ]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {position: "top"}
+                },
+                scales: {
+                    x: {ticks: {maxTicksLimit: 10}},
+                    y: {beginAtZero: false}
+                }
+            }
+        });
+    }
+
+    function renderMetrics(data) {
+        document.getElementById("trendPrediction").innerText = data.trendPrediction;
+        document.getElementById("upProbability").innerText = (data.upProbability * 100).toFixed(2) + "%";
+        document.getElementById("actionSuggestion").innerText = data.actionSuggestion;
+        document.getElementById("latestAdvice").innerText = data.latestAdvice;
+    }
+
+    async function analyze() {
+        const stockCode = document.getElementById("stockCode").value.trim();
+        const beginDate = document.getElementById("beginDate").value.trim();
+        const endDate = document.getElementById("endDate").value.trim();
+        const errorText = document.getElementById("errorText");
+        errorText.innerText = "";
+
+        try {
+            const query = new URLSearchParams({stockCode, beginDate, endDate});
+            const response = await fetch(`/api/analyze?${query.toString()}`);
+            if (!response.ok) {
+                const text = await response.text();
+                throw new Error(text || "Analyze failed");
+            }
+            const data = await response.json();
+            renderMetrics(data);
+            renderChart(data);
+            renderSignals(data.signals);
+        } catch (error) {
+            errorText.innerText = "Error: " + error.message;
+        }
+    }
+
+    document.getElementById("analyzeBtn").addEventListener("click", analyze);
+    analyze();
+</script>
+</body>
+</html>
