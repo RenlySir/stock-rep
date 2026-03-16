@@ -2,9 +2,11 @@ package com.example.stockpredictor.service;
 
 import com.example.stockpredictor.model.KLine;
 import com.example.stockpredictor.model.PredictionResult;
+import org.springframework.stereotype.Service;
 
 import java.util.List;
 
+@Service
 public class SimpleTrendPredictor {
 
     public PredictionResult predictNextDay(List<KLine> kLines) {

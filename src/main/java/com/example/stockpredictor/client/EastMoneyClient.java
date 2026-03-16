@@ -3,6 +3,7 @@ package com.example.stockpredictor.client;
 import com.example.stockpredictor.model.KLine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.net.URI;
@@ -13,12 +14,12 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+@Component
 public class EastMoneyClient {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public List<KLine> fetchDailyKLines(String stockCode, String beginDate, String endDate)
-            throws IOException, InterruptedException {
+    public List<KLine> fetchDailyKLines(String stockCode, String beginDate, String endDate) {
         String secid = resolveSecId(stockCode);
         String url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
                 + "?secid=" + secid
@@ -34,31 +35,38 @@ public class EastMoneyClient {
                 .GET()
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        JsonNode root = MAPPER.readTree(response.body());
-        JsonNode dataNode = root.path("data");
-        JsonNode klineNode = dataNode.path("klines");
-        if (klineNode.isMissingNode() || !klineNode.isArray()) {
-            throw new IllegalStateException("No k-line data returned for " + stockCode);
-        }
-
-        List<KLine> kLines = new ArrayList<>();
-        for (JsonNode item : klineNode) {
-            String[] fields = item.asText().split(",");
-            if (fields.length < 6) {
-                continue;
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            JsonNode root = MAPPER.readTree(response.body());
+            JsonNode dataNode = root.path("data");
+            JsonNode klineNode = dataNode.path("klines");
+            if (klineNode.isMissingNode() || !klineNode.isArray()) {
+                throw new IllegalStateException("No k-line data returned for " + stockCode);
             }
-            KLine kLine = new KLine(
-                    LocalDate.parse(fields[0].trim()),
-                    Double.parseDouble(fields[1]),
-                    Double.parseDouble(fields[2]),
-                    Double.parseDouble(fields[3]),
-                    Double.parseDouble(fields[4]),
-                    Double.parseDouble(fields[5])
-            );
-            kLines.add(kLine);
+
+            List<KLine> kLines = new ArrayList<>();
+            for (JsonNode item : klineNode) {
+                String[] fields = item.asText().split(",");
+                if (fields.length < 6) {
+                    continue;
+                }
+                KLine kLine = new KLine(
+                        LocalDate.parse(fields[0].trim()),
+                        Double.parseDouble(fields[1]),
+                        Double.parseDouble(fields[2]),
+                        Double.parseDouble(fields[3]),
+                        Double.parseDouble(fields[4]),
+                        Double.parseDouble(fields[5])
+                );
+                kLines.add(kLine);
+            }
+            return kLines;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while fetching k-line data for " + stockCode, e);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to fetch k-line data for " + stockCode, e);
         }
-        return kLines;
     }
 
     private String resolveSecId(String stockCode) {
